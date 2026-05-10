@@ -223,15 +223,8 @@ struct LauncherView: View {
         )
         .tag(app.id)
         .contentShape(Rectangle())
-        .simultaneousGesture(
-            TapGesture(count: 1).onEnded {
-                viewModel.selection = app.id
-                viewModel.query = ""
-            }
-        )
         .onTapGesture(count: 2) {
             viewModel.selection = app.id
-            viewModel.query = ""
             viewModel.openSelection()
         }
     }

@@ -117,6 +117,7 @@ final class LauncherViewModel: ObservableObject {
         else {
             return
         }
+        query = ""
         AppOpener.open(app)
         AppDelegate.hidePopoverFromLauncher()
     }
