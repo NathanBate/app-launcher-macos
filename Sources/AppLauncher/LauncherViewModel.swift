@@ -51,6 +51,10 @@ final class LauncherViewModel: ObservableObject {
     }
 
     func resetSelectionForCurrentFilter() {
+        if let sid = selection,
+           orderedAppsForDisplay.contains(where: { $0.id == sid }) {
+            return
+        }
         selection = orderedAppsForDisplay.first?.id
     }
 
