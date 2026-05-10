@@ -12,6 +12,8 @@ struct LauncherView: View {
     @AppStorage(MenuBarResourceUsageDefaults.showInMenuBarKey) private var showMenuBarResourceUsage = true
     @AppStorage(AppPresentationDefaults.showInDockAndAppSwitcherKey) private var showAppInDockAndAppSwitcher = false
 
+    @State private var launchAtLogin = LaunchAtLogin.isRegisteredOrPending
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 10) {
@@ -119,6 +121,7 @@ struct LauncherView: View {
         .onReceive(NotificationCenter.default.publisher(for: .launcherDidShow)) { _ in
             searchFocused = true
             viewModel.resetSelectionForCurrentFilter()
+            launchAtLogin = LaunchAtLogin.isRegisteredOrPending
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuBarSectionStateDidChange)) { _ in
             menuBarSectionCollapsed = AppDelegate.currentMenuBarSectionCollapsedState()
@@ -156,6 +159,9 @@ struct LauncherView: View {
             .onChange(of: showAppInDockAndAppSwitcher) { _, _ in
                 NotificationCenter.default.post(name: .dockPresentationSettingDidChange, object: nil)
             }
+            Toggle(isOn: launchAtLoginBinding) {
+                Label("Open at login", systemImage: "clock.arrow.circlepath")
+            }
             Divider()
             Button(role: .destructive) {
                 NSApp.terminate(nil)
@@ -172,6 +178,22 @@ struct LauncherView: View {
         .menuIndicator(.hidden)
         .help("Settings")
         .accessibilityLabel("Settings")
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { launchAtLogin },
+            set: { newValue in
+                let previous = launchAtLogin
+                launchAtLogin = newValue
+                do {
+                    try LaunchAtLogin.setEnabled(newValue)
+                    launchAtLogin = LaunchAtLogin.isRegisteredOrPending
+                } catch {
+                    launchAtLogin = previous
+                }
+            }
+        )
     }
 
     @ViewBuilder
