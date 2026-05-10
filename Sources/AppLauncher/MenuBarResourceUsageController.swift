@@ -196,7 +196,7 @@ final class MenuBarResourceUsageController {
         let ramPercent = MemoryUsageReader.systemUsedFractionAndPercent().percentRounded
         let title = String(format: "CPU %d%%  RAM %d%%", cpu, ramPercent)
         button.title = title
-        button.accessibilityLabel = "CPU \(cpu) percent, RAM \(ramPercent) percent"
+        button.setAccessibilityLabel("CPU \(cpu) percent, RAM \(ramPercent) percent")
     }
 
     deinit {
