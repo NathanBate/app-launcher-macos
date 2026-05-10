@@ -60,17 +60,18 @@ private struct CPUSampler {
             vm_deallocate(mach_task_self_, vm_address_t(UInt(bitPattern: cpuInfo)), byteCount)
         }
 
-        let loads = cpuInfo.bindMemory(to: processor_cpu_load_info.self, capacity: Int(numCPUs))
-        var idle: UInt64 = 0
-        var total: UInt64 = 0
-
-        for i in 0 ..< Int(numCPUs) {
-            let ticks = loads[i].cpu_ticks
-            idle += UInt64(ticks.2)
-            total += UInt64(ticks.0) + UInt64(ticks.1) + UInt64(ticks.2) + UInt64(ticks.3)
+        let summary = cpuInfo.withMemoryRebound(to: processor_cpu_load_info.self, capacity: Int(numCPUs)) { loads -> (UInt64, UInt64) in
+            var idle: UInt64 = 0
+            var total: UInt64 = 0
+            for i in 0 ..< Int(numCPUs) {
+                let ticks = loads[i].cpu_ticks
+                idle += UInt64(ticks.2)
+                total += UInt64(ticks.0) + UInt64(ticks.1) + UInt64(ticks.2) + UInt64(ticks.3)
+            }
+            return (idle, total)
         }
 
-        return (idle, total)
+        return (idle: summary.0, total: summary.1)
     }
 }
 
@@ -82,7 +83,10 @@ private enum MemoryUsageReader {
         }
 
         var stats = vm_statistics64_data_t()
-        var count = HOST_VM_INFO64_COUNT
+        // HOST_VM_INFO64_COUNT is not imported into Swift; match mach/vm_statistics.h.
+        var count = mach_msg_type_number_t(
+            MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size
+        )
 
         let kr = withUnsafeMutablePointer(to: &stats) { ptr in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
@@ -201,7 +205,7 @@ private enum DockIconComposer {
 
 // MARK: - Controller
 
-@MainActor
+/// All entry points (`start`, timer, notifications) are scheduled on the main thread / main run loop.
 final class DockResourceUsageController {
     private var timer: Timer?
     private var cpuSampler = CPUSampler()
