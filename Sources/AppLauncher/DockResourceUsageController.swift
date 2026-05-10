@@ -124,27 +124,32 @@ private enum DockIconComposer {
             NSGraphicsContext.current?.imageInterpolation = .high
             base.draw(in: bounds)
 
-            let barHeight = max(bounds.height * 0.32, 34)
+            // Use most of the lower half of the canvas so type stays huge after Dock scaling
+            // (the previous ~11.5pt cap was effectively invisible at dock size).
+            let side = min(bounds.width, bounds.height)
+            let barHeight = max(side * 0.58, side * 0.5)
             let barRect = NSRect(x: 0, y: 0, width: bounds.width, height: barHeight)
 
             NSGradient(
                 colors: [
-                    NSColor.black.withAlphaComponent(0.78),
-                    NSColor.black.withAlphaComponent(0.42),
+                    NSColor.black.withAlphaComponent(0.85),
+                    NSColor.black.withAlphaComponent(0.5),
                 ],
                 atLocations: [0, 1],
                 colorSpace: NSColorSpace.deviceRGB
             )?.draw(in: barRect, angle: 90)
 
-            let fontSize = min(bounds.width * 0.058, 11.5)
-            let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .semibold)
+            // ~15–20× prior effective size (~11.5pt cap): scale with icon pixel size (typically 512pt).
+            let fontSize = max(48, min(side * 0.42, barHeight * 0.82))
+            let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)
             let paragraph = NSMutableParagraphStyle()
             paragraph.alignment = .center
+            paragraph.lineBreakMode = .byTruncatingTail
 
             let shadow = NSShadow()
-            shadow.shadowBlurRadius = 2
-            shadow.shadowOffset = NSSize(width: 0, height: -0.5)
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.55)
+            shadow.shadowBlurRadius = max(4, fontSize * 0.05)
+            shadow.shadowOffset = NSSize(width: 0, height: -fontSize * 0.02)
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.65)
 
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
@@ -153,33 +158,19 @@ private enum DockIconComposer {
                 .shadow: shadow,
             ]
 
-            let line1 = NSAttributedString(string: "CPU \(cpuPercent)%", attributes: attrs)
-            let line2 = NSAttributedString(string: "RAM \(ramPercent)%", attributes: attrs)
-
-            let gap: CGFloat = 1
-            let line1Height = line1.size().height
-            let line2Height = line2.size().height
-            let blockHeight = line1Height + gap + line2Height
-            let textY = barRect.midY - blockHeight / 2
-
-            line1.draw(
-                with: NSRect(
-                    x: barRect.minX + 4,
-                    y: textY + line2Height + gap,
-                    width: barRect.width - 8,
-                    height: line1Height
-                ),
-                options: [.usesLineFragmentOrigin]
+            let combined = NSAttributedString(
+                string: "CPU \(cpuPercent)%   RAM \(ramPercent)%",
+                attributes: attrs
             )
-            line2.draw(
-                with: NSRect(
-                    x: barRect.minX + 4,
-                    y: textY,
-                    width: barRect.width - 8,
-                    height: line2Height
-                ),
-                options: [.usesLineFragmentOrigin]
+
+            let pad = max(side * 0.03, 10)
+            let textRect = NSRect(
+                x: barRect.minX + pad,
+                y: barRect.minY + pad,
+                width: barRect.width - pad * 2,
+                height: barRect.height - pad * 2
             )
+            combined.draw(with: textRect, options: [.usesLineFragmentOrigin])
 
             return true
         }
