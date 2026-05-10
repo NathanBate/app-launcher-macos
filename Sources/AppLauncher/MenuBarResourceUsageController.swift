@@ -186,6 +186,14 @@ final class MenuBarResourceUsageController {
         statusItem = nil
     }
 
+    /// Screen rect for the CPU/RAM status item, used to ignore “click outside” when that item is hit.
+    func clickAwayExclusionScreenFrame() -> NSRect? {
+        guard let button = statusItem?.button, let window = button.window else {
+            return nil
+        }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
+    }
+
     private func tick() {
         let enabled = UserDefaults.standard.object(forKey: MenuBarResourceUsageDefaults.showInMenuBarKey) as? Bool ?? true
         guard enabled, let button = statusItem?.button else {

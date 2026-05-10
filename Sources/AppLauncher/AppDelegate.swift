@@ -2,7 +2,7 @@ import AppKit
 import KeyboardShortcuts
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     static weak var shared: AppDelegate?
 
     private static let didAutoRevealPopoverKey = "DidAutoRevealAppLauncherPopover"
@@ -23,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let menuBarResourceUsageController = MenuBarResourceUsageController()
 
     private var dockPresentationObserver: NSObjectProtocol?
+
+    private var clickAwayEventMonitor: Any?
+    private var clickAwayResignActiveObserver: NSObjectProtocol?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         Self.shared = self
@@ -75,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        removeClickAwayMonitoring()
         if let dockPresentationObserver {
             NotificationCenter.default.removeObserver(dockPresentationObserver)
         }
@@ -100,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.contentViewController = hostingController
+        popover.delegate = self
     }
 
     private func configureStatusItem() {
@@ -203,10 +208,89 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.popover.contentViewController?.view.window?.makeKey()
         }
+        installClickAwayMonitoring()
     }
 
     func hidePopover() {
         popover.performClose(nil)
+    }
+
+    // MARK: - Click-away (close when interacting outside the popover)
+
+    func popoverDidClose(_ notification: Notification) {
+        removeClickAwayMonitoring()
+    }
+
+    private func installClickAwayMonitoring() {
+        removeClickAwayMonitoring()
+
+        clickAwayResignActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.popover.isShown else {
+                return
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.popover.isShown else {
+                    return
+                }
+                self.hidePopover()
+            }
+        }
+
+        clickAwayEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self, self.popover.isShown else {
+                return event
+            }
+            let screenPoint = NSEvent.mouseLocation
+            if self.screenPointIsInsidePopoverOrExcludedStatusItems(screenPoint) {
+                return event
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.popover.isShown else {
+                    return
+                }
+                self.hidePopover()
+            }
+            return event
+        }
+    }
+
+    private func removeClickAwayMonitoring() {
+        if let clickAwayEventMonitor {
+            NSEvent.removeMonitor(clickAwayEventMonitor)
+            self.clickAwayEventMonitor = nil
+        }
+        if let clickAwayResignActiveObserver {
+            NotificationCenter.default.removeObserver(clickAwayResignActiveObserver)
+            self.clickAwayResignActiveObserver = nil
+        }
+    }
+
+    private func screenPointIsInsidePopoverOrExcludedStatusItems(_ screenPoint: NSPoint) -> Bool {
+        if let popFrame = popover.contentViewController?.view.window?.frame, popFrame.contains(screenPoint) {
+            return true
+        }
+        for rect in statusItemClickAwayExclusionFrames() where rect.contains(screenPoint) {
+            return true
+        }
+        return false
+    }
+
+    private func statusItemClickAwayExclusionFrames() -> [NSRect] {
+        var frames: [NSRect] = []
+        if let button = statusItem.button, let window = button.window {
+            frames.append(window.convertToScreen(button.convert(button.bounds, to: nil)))
+        }
+        if let button = hideSectionItem.button, let window = button.window {
+            frames.append(window.convertToScreen(button.convert(button.bounds, to: nil)))
+        }
+        if let rect = menuBarResourceUsageController.clickAwayExclusionScreenFrame() {
+            frames.append(rect)
+        }
+        return frames
     }
 
     static func hidePopoverFromLauncher() {
