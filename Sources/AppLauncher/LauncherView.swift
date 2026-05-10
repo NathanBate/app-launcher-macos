@@ -219,14 +219,13 @@ struct LauncherView: View {
         AppRow(
             app: app,
             isFavorite: viewModel.isFavorite(id: app.id),
-            onToggleFavorite: { viewModel.toggleFavorite(id: app.id) }
+            onToggleFavorite: { viewModel.toggleFavorite(id: app.id) },
+            onLaunch: {
+                viewModel.selection = app.id
+                viewModel.openSelection()
+            }
         )
         .tag(app.id)
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            viewModel.selection = app.id
-            viewModel.openSelection()
-        }
     }
 }
 
@@ -234,26 +233,32 @@ private struct AppRow: View {
     let app: InstalledApp
     let isFavorite: Bool
     let onToggleFavorite: () -> Void
+    let onLaunch: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(nsImage: app.icon)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 36, height: 36)
+            HStack(spacing: 10) {
+                Image(nsImage: app.icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 36, height: 36)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(app.name)
-                    .font(.body)
-                if let bid = app.bundleIdentifier {
-                    Text(bid)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.name)
+                        .font(.body)
+                    if let bid = app.bundleIdentifier {
+                        Text(bid)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
-
-            Spacer(minLength: 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                onLaunch()
+            }
 
             Button {
                 onToggleFavorite()
@@ -270,7 +275,7 @@ private struct AppRow: View {
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
-        .accessibilityHint("Press Return to launch")
+        .accessibilityHint("Click to launch")
     }
 
     private var accessibilityDescription: String {
