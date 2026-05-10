@@ -20,8 +20,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var collapsedHideSectionLength: CGFloat = 2000
     private(set) var isMenuBarSectionCollapsed = false
 
+    private let dockResourceUsageController = DockResourceUsageController()
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         Self.shared = self
+        UserDefaults.standard.register(defaults: [
+            DockResourceUsageDefaults.showOnDockIconKey: true,
+        ])
         // Regular policy keeps a Dock icon so launching from Finder is visibly “alive”.
         // The launcher still lives in the menu bar via `NSStatusItem`.
         NSApp.setActivationPolicy(.regular)
@@ -48,6 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showPopover()
             }
         }
+
+        dockResourceUsageController.start()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

@@ -9,6 +9,7 @@ struct LauncherView: View {
 
     @State private var showShortcutSettings = false
     @State private var menuBarSectionCollapsed = AppDelegate.currentMenuBarSectionCollapsedState()
+    @AppStorage(DockResourceUsageDefaults.showOnDockIconKey) private var showDockResourceUsage = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -141,6 +142,12 @@ struct LauncherView: View {
                 showShortcutSettings = true
             } label: {
                 Label("Keyboard shortcut…", systemImage: "keyboard")
+            }
+            Toggle(isOn: $showDockResourceUsage) {
+                Label("CPU & RAM on Dock icon", systemImage: "chart.bar.fill")
+            }
+            .onChange(of: showDockResourceUsage) { _, _ in
+                NotificationCenter.default.post(name: .dockResourceUsageSettingDidChange, object: nil)
             }
             Divider()
             Button(role: .destructive) {
