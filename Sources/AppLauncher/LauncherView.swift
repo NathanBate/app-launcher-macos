@@ -10,6 +10,7 @@ struct LauncherView: View {
     @State private var showShortcutSettings = false
     @State private var menuBarSectionCollapsed = AppDelegate.currentMenuBarSectionCollapsedState()
     @AppStorage(MenuBarResourceUsageDefaults.showInMenuBarKey) private var showMenuBarResourceUsage = true
+    @AppStorage(AppPresentationDefaults.showInDockAndAppSwitcherKey) private var showAppInDockAndAppSwitcher = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -148,6 +149,12 @@ struct LauncherView: View {
             }
             .onChange(of: showMenuBarResourceUsage) { _, _ in
                 NotificationCenter.default.post(name: .menuBarResourceUsageSettingDidChange, object: nil)
+            }
+            Toggle(isOn: $showAppInDockAndAppSwitcher) {
+                Label("Dock & App Switcher icon", systemImage: "dock.rectangle")
+            }
+            .onChange(of: showAppInDockAndAppSwitcher) { _, _ in
+                NotificationCenter.default.post(name: .dockPresentationSettingDidChange, object: nil)
             }
             Divider()
             Button(role: .destructive) {

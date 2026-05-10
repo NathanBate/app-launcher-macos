@@ -22,15 +22,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let menuBarResourceUsageController = MenuBarResourceUsageController()
 
+    private var dockPresentationObserver: NSObjectProtocol?
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         Self.shared = self
         MenuBarResourceUsageDefaults.migrateFromDockPreferenceIfNeeded()
         UserDefaults.standard.register(defaults: [
             MenuBarResourceUsageDefaults.showInMenuBarKey: true,
+            AppPresentationDefaults.showInDockAndAppSwitcherKey: false,
         ])
-        // Regular policy keeps a Dock icon so launching from Finder is visibly “alive”.
-        // The launcher still lives in the menu bar via `NSStatusItem`.
-        NSApp.setActivationPolicy(.regular)
+        applyActivationPolicyFromUserDefaults()
         buildMainMenu()
     }
 
@@ -46,6 +47,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         KeyboardShortcuts.onKeyUp(for: .toggleLauncher) { [weak self] in
             self?.togglePopover()
+        }
+
+        dockPresentationObserver = NotificationCenter.default.addObserver(
+            forName: .dockPresentationSettingDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyActivationPolicyFromUserDefaults()
         }
 
         // First run: pop the popover once so it’s obvious where the app went.
@@ -66,9 +75,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let dockPresentationObserver {
+            NotificationCenter.default.removeObserver(dockPresentationObserver)
+        }
         if let rightClickEventMonitor {
             NSEvent.removeMonitor(rightClickEventMonitor)
         }
+    }
+
+    private func applyActivationPolicyFromUserDefaults() {
+        let showDock = UserDefaults.standard.bool(forKey: AppPresentationDefaults.showInDockAndAppSwitcherKey)
+        let policy: NSApplication.ActivationPolicy = showDock ? .regular : .accessory
+        NSApp.setActivationPolicy(policy)
     }
 
     func applicationDidChangeScreenParameters(_ notification: Notification) {
