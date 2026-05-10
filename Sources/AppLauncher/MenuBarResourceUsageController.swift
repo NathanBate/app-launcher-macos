@@ -3,8 +3,19 @@ import Darwin
 
 // MARK: - UserDefaults
 
-enum DockResourceUsageDefaults {
-    static let showOnDockIconKey = "showDockResourceUsage"
+enum MenuBarResourceUsageDefaults {
+    static let showInMenuBarKey = "showMenuBarCPUAndRAM"
+    private static let legacyDockPreferenceKey = "showDockResourceUsage"
+
+    /// Copies the old Dock-toggle preference once so upgrades keep the same on/off choice.
+    static func migrateFromDockPreferenceIfNeeded() {
+        guard UserDefaults.standard.object(forKey: showInMenuBarKey) == nil else {
+            return
+        }
+        if let legacy = UserDefaults.standard.object(forKey: legacyDockPreferenceKey) as? Bool {
+            UserDefaults.standard.set(legacy, forKey: showInMenuBarKey)
+        }
+    }
 }
 
 // MARK: - System sampling
@@ -83,7 +94,6 @@ private enum MemoryUsageReader {
         }
 
         var stats = vm_statistics64_data_t()
-        // HOST_VM_INFO64_COUNT is not imported into Swift; match mach/vm_statistics.h.
         var count = mach_msg_type_number_t(
             MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size
         )
@@ -111,100 +121,18 @@ private enum MemoryUsageReader {
     }
 }
 
-// MARK: - Icon composition
-
-private enum DockIconComposer {
-    static func image(base: NSImage, cpuPercent: Int, ramPercent: Int) -> NSImage {
-        let size = base.size
-        guard size.width > 1, size.height > 1 else {
-            return base
-        }
-
-        return NSImage(size: size, flipped: false) { bounds in
-            NSGraphicsContext.current?.imageInterpolation = .high
-            base.draw(in: bounds)
-
-            // Use most of the lower half of the canvas so type stays huge after Dock scaling
-            // (the previous ~11.5pt cap was effectively invisible at dock size).
-            let side = min(bounds.width, bounds.height)
-            let barHeight = max(side * 0.58, side * 0.5)
-            let barRect = NSRect(x: 0, y: 0, width: bounds.width, height: barHeight)
-
-            NSGradient(
-                colors: [
-                    NSColor.black.withAlphaComponent(0.85),
-                    NSColor.black.withAlphaComponent(0.5),
-                ],
-                atLocations: [0, 1],
-                colorSpace: NSColorSpace.deviceRGB
-            )?.draw(in: barRect, angle: 90)
-
-            // ~15–20× prior effective size (~11.5pt cap): scale with icon pixel size (typically 512pt).
-            let fontSize = max(48, min(side * 0.42, barHeight * 0.82))
-            let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.alignment = .center
-            paragraph.lineBreakMode = .byTruncatingTail
-
-            let shadow = NSShadow()
-            shadow.shadowBlurRadius = max(4, fontSize * 0.05)
-            shadow.shadowOffset = NSSize(width: 0, height: -fontSize * 0.02)
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.65)
-
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: NSColor.white,
-                .paragraphStyle: paragraph,
-                .shadow: shadow,
-            ]
-
-            let combined = NSAttributedString(
-                string: "CPU \(cpuPercent)%   RAM \(ramPercent)%",
-                attributes: attrs
-            )
-
-            let pad = max(side * 0.03, 10)
-            let textRect = NSRect(
-                x: barRect.minX + pad,
-                y: barRect.minY + pad,
-                width: barRect.width - pad * 2,
-                height: barRect.height - pad * 2
-            )
-            combined.draw(with: textRect, options: [.usesLineFragmentOrigin])
-
-            return true
-        }
-    }
-
-    static func loadBaseIconFromBundle() -> NSImage {
-        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
-           let image = NSImage(contentsOf: url) {
-            return image
-        }
-
-        let execURL = URL(fileURLWithPath: CommandLine.arguments[0])
-        let bundleURL = execURL.deletingLastPathComponent().appendingPathComponent("AppLauncher_AppLauncher.bundle")
-        if let bundle = Bundle(url: bundleURL),
-           let url = bundle.url(forResource: "AppIcon", withExtension: "icns"),
-           let image = NSImage(contentsOf: url) {
-            return image
-        }
-
-        return NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
-    }
-}
-
 // MARK: - Controller
 
-/// All entry points (`start`, timer, notifications) are scheduled on the main thread / main run loop.
-final class DockResourceUsageController {
+/// Entry points (`start`, timer, notifications) run on the main thread / main run loop.
+final class MenuBarResourceUsageController {
     private var timer: Timer?
     private var cpuSampler = CPUSampler()
     private var settingObserver: NSObjectProtocol?
+    private var statusItem: NSStatusItem?
 
     func start() {
         settingObserver = NotificationCenter.default.addObserver(
-            forName: .dockResourceUsageSettingDidChange,
+            forName: .menuBarResourceUsageSettingDidChange,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -214,36 +142,61 @@ final class DockResourceUsageController {
     }
 
     func applySettings() {
-        let enabled = UserDefaults.standard.object(forKey: DockResourceUsageDefaults.showOnDockIconKey) as? Bool ?? true
+        // Clear any legacy Dock overlay from earlier builds.
+        NSApp.applicationIconImage = nil
+
+        let enabled = UserDefaults.standard.object(forKey: MenuBarResourceUsageDefaults.showInMenuBarKey) as? Bool ?? true
 
         timer?.invalidate()
         timer = nil
         cpuSampler = CPUSampler()
+        removeStatusItem()
 
         if enabled {
+            installStatusItem()
             let t = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
                 self?.tick()
             }
             RunLoop.main.add(t, forMode: .common)
             timer = t
             tick()
-        } else {
-            NSApp.applicationIconImage = nil
         }
     }
 
-    private lazy var cachedBaseIcon: NSImage = DockIconComposer.loadBaseIconFromBundle()
+    private func installStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.autosaveName = "applauncher_cpu_ram"
+        guard let button = item.button else {
+            NSStatusBar.system.removeStatusItem(item)
+            return
+        }
+
+        button.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        button.title = "CPU —%  RAM —%"
+        button.image = nil
+        button.imagePosition = .noImage
+        button.toolTip = "System CPU and memory usage"
+        statusItem = item
+    }
+
+    private func removeStatusItem() {
+        if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+        }
+        statusItem = nil
+    }
 
     private func tick() {
-        let enabled = UserDefaults.standard.object(forKey: DockResourceUsageDefaults.showOnDockIconKey) as? Bool ?? true
-        guard enabled else {
+        let enabled = UserDefaults.standard.object(forKey: MenuBarResourceUsageDefaults.showInMenuBarKey) as? Bool ?? true
+        guard enabled, let button = statusItem?.button else {
             return
         }
 
         let cpu = cpuSampler.usagePercentRounded()
         let ramPercent = MemoryUsageReader.systemUsedFractionAndPercent().percentRounded
-        let composed = DockIconComposer.image(base: cachedBaseIcon, cpuPercent: cpu, ramPercent: ramPercent)
-        NSApp.applicationIconImage = composed
+        let title = String(format: "CPU %d%%  RAM %d%%", cpu, ramPercent)
+        button.title = title
+        button.accessibilityLabel = "CPU \(cpu) percent, RAM \(ramPercent) percent"
     }
 
     deinit {
@@ -251,5 +204,6 @@ final class DockResourceUsageController {
             NotificationCenter.default.removeObserver(settingObserver)
         }
         timer?.invalidate()
+        removeStatusItem()
     }
 }

@@ -20,12 +20,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var collapsedHideSectionLength: CGFloat = 2000
     private(set) var isMenuBarSectionCollapsed = false
 
-    private let dockResourceUsageController = DockResourceUsageController()
+    private let menuBarResourceUsageController = MenuBarResourceUsageController()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         Self.shared = self
+        MenuBarResourceUsageDefaults.migrateFromDockPreferenceIfNeeded()
         UserDefaults.standard.register(defaults: [
-            DockResourceUsageDefaults.showOnDockIconKey: true,
+            MenuBarResourceUsageDefaults.showInMenuBarKey: true,
         ])
         // Regular policy keeps a Dock icon so launching from Finder is visibly “alive”.
         // The launcher still lives in the menu bar via `NSStatusItem`.
@@ -35,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configurePopover()
+        // Create before other items so this status entry sits toward the screen edge (with other extras).
+        menuBarResourceUsageController.start()
         configureStatusItem()
         configureHideSectionItem()
         installRightClickMenuMonitor()
@@ -53,8 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showPopover()
             }
         }
-
-        dockResourceUsageController.start()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
