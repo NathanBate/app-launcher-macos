@@ -48,13 +48,22 @@ struct LauncherView: View {
             List(selection: $viewModel.selection) {
                 if viewModel.isSearching {
                     Section {
-                        ForEach(viewModel.filtered) { app in
+                        ForEach(viewModel.searchResultsOrdered) { app in
                             appRow(app)
                         }
                     } header: {
                         sectionHeader("Results")
                     }
                 } else {
+                    if !viewModel.favoritesForDisplay.isEmpty {
+                        Section {
+                            ForEach(viewModel.favoritesForDisplay) { app in
+                                appRow(app)
+                            }
+                        } header: {
+                            sectionHeader("Favorites")
+                        }
+                    }
                     ForEach(AppInstallGroup.displayOrder) { group in
                         let groupApps = viewModel.apps(in: group)
                         if !groupApps.isEmpty {
@@ -207,25 +216,31 @@ struct LauncherView: View {
     }
 
     private func appRow(_ app: InstalledApp) -> some View {
-        AppRow(app: app)
-            .tag(app.id)
-            .contentShape(Rectangle())
-            .simultaneousGesture(
-                TapGesture(count: 1).onEnded {
-                    viewModel.selection = app.id
-                    viewModel.query = ""
-                }
-            )
-            .onTapGesture(count: 2) {
+        AppRow(
+            app: app,
+            isFavorite: viewModel.isFavorite(id: app.id),
+            onToggleFavorite: { viewModel.toggleFavorite(id: app.id) }
+        )
+        .tag(app.id)
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            TapGesture(count: 1).onEnded {
                 viewModel.selection = app.id
                 viewModel.query = ""
-                viewModel.openSelection()
             }
+        )
+        .onTapGesture(count: 2) {
+            viewModel.selection = app.id
+            viewModel.query = ""
+            viewModel.openSelection()
+        }
     }
 }
 
 private struct AppRow: View {
     let app: InstalledApp
+    let isFavorite: Bool
+    let onToggleFavorite: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -244,6 +259,20 @@ private struct AppRow: View {
                         .lineLimit(1)
                 }
             }
+
+            Spacer(minLength: 4)
+
+            Button {
+                onToggleFavorite()
+            } label: {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(isFavorite ? Color.yellow : Color.secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isFavorite ? "Remove from Favorites" : "Add to Favorites")
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)

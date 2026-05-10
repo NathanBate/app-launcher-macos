@@ -11,6 +11,7 @@ final class LauncherViewModel: ObservableObject {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Search matches; use ``searchResultsOrdered`` for display order (favorites first).
     var filtered: [InstalledApp] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -22,18 +23,47 @@ final class LauncherViewModel: ObservableObject {
         }
     }
 
-    /// Order of rows as shown in the list (group order when browsing; alphabetical when searching).
+    /// Favorites that still exist, in saved order (for the top section when browsing).
+    var favoritesForDisplay: [InstalledApp] {
+        AppFavorites.shared.orderedIds.compactMap { id in apps.first(where: { $0.id == id }) }
+    }
+
+    /// When searching: favorites matching the query first (saved order), then the rest alphabetically.
+    var searchResultsOrdered: [InstalledApp] {
+        let matches = filtered
+        let favPart = AppFavorites.shared.orderedIds.compactMap { id in matches.first(where: { $0.id == id }) }
+        let rest = matches
+            .filter { !AppFavorites.shared.contains($0.id) }
+            .sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        return favPart + rest
+    }
+
+    /// Order of rows as shown in the list (favorites + groups when browsing; favorites first when searching).
     var orderedAppsForDisplay: [InstalledApp] {
         if isSearching {
-            return filtered
+            return searchResultsOrdered
         }
-        return AppInstallGroup.displayOrder.flatMap { apps(in: $0) }
+        return favoritesForDisplay + AppInstallGroup.displayOrder.flatMap { apps(in: $0) }
     }
 
     func apps(in group: AppInstallGroup) -> [InstalledApp] {
-        apps.filter { $0.installGroup == group }.sorted {
-            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
+        apps
+            .filter { $0.installGroup == group && !AppFavorites.shared.contains($0.id) }
+            .sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+    }
+
+    func toggleFavorite(id: InstalledApp.ID) {
+        AppFavorites.shared.toggle(id)
+        syncSelectionWithDisplayOrder()
+        objectWillChange.send()
+    }
+
+    func isFavorite(id: InstalledApp.ID) -> Bool {
+        AppFavorites.shared.contains(id)
     }
 
     func load() {
@@ -45,6 +75,7 @@ final class LauncherViewModel: ObservableObject {
             }
             await MainActor.run {
                 self.apps = models
+                AppFavorites.shared.prune(toInstalledIds: Set(models.map(\.id)))
                 self.syncSelectionWithDisplayOrder()
             }
         }
